@@ -1,0 +1,9 @@
+{
+  "name": "freshdrop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Client upload portal that pushes files straight into a Frame.io V4 folder",
+  "dependencies": {
+    "@netlify/blobs": "^7.0.0"
+  }
+}

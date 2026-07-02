@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreshDrop — Upload footage</title>
+<style>
+  :root { --accent: #2563eb; --bg: #fafafa; --border: #e2e2e2; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    margin: 0;
+    padding: 3rem 1.5rem;
+    color: #1a1a1a;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  p.sub { color: #666; margin-top: 0; margin-bottom: 2rem; }
+  #dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 3rem 1.5rem;
+    text-align: center;
+    background: white;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  #dropzone.drag { border-color: var(--accent); background: #f0f5ff; }
+  #dropzone p { margin: 0; color: #555; }
+  input[type=file] { display: none; }
+  .file-row {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+    margin-top: 0.75rem;
+  }
+  .file-row .name { font-size: 0.9rem; font-weight: 600; word-break: break-all; }
+  .file-row .status { font-size: 0.8rem; color: #666; margin-top: 0.25rem; }
+  .bar-bg { background: #eee; border-radius: 4px; height: 6px; margin-top: 0.5rem; overflow: hidden; }
+  .bar-fill { background: var(--accent); height: 100%; width: 0%; transition: width 0.2s; }
+  .error { color: #c0392b; }
+  .done { color: #1a8c4a; }
+  #missing-folder { color: #c0392b; text-align: center; margin-top: 2rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>FreshDrop</h1>
+  <p class="sub" id="subtitle">Drag files in, or click to browse. Files go straight in — no account needed.</p>
+
+  <div id="dropzone">
+    <p>Drop files here, or click to select</p>
+    <input type="file" id="fileInput" multiple>
+  </div>
+
+  <div id="fileList"></div>
+  <div id="missing-folder" style="display:none;">
+    This upload link is missing a destination — ask whoever sent it to you for a valid link.
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const folderId = params.get('folder');
+const clientLabel = params.get('client');
+
+if (clientLabel) {
+  document.getElementById('subtitle').textContent =
+    `Upload for ${clientLabel}. Drag files in, or click to browse.`;
+}
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const fileList = document.getElementById('fileList');
+
+if (!folderId) {
+  dropzone.style.display = 'none';
+  document.getElementById('missing-folder').style.display = 'block';
+} else {
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('drag');
+    handleFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+}
+
+function handleFiles(fileArray) {
+  Array.from(fileArray).forEach(uploadFile);
+}
+
+async function uploadFile(file) {
+  const row = document.createElement('div');
+  row.className = 'file-row';
+  row.innerHTML = `
+    <div class="name">${escapeHtml(file.name)}</div>
+    <div class="status">Preparing upload…</div>
+    <div class="bar-bg"><div class="bar-fill"></div></div>
+  `;
+  fileList.prepend(row);
+  const statusEl = row.querySelector('.status');
+  const barEl = row.querySelector('.bar-fill');
+
+  try {
+    const createRes = await fetch('/api/create-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        folder_id: folderId,
+        file_name: file.name,
+        file_size: file.size,
+        content_type: file.type || 'application/octet-stream'
+      })
+    });
+
+    if (!createRes.ok) {
+      throw new Error(await createRes.text());
+    }
+
+    const { upload_urls, media_type } = await createRes.json();
+    if (!upload_urls || upload_urls.length === 0) {
+      throw new Error('No upload URL returned');
+    }
+
+    statusEl.textContent = 'Uploading…';
+
+    const chunkCount = upload_urls.length;
+    const chunkSize = Math.ceil(file.size / chunkCount);
+    let uploadedBytes = 0;
+
+    for (let i = 0; i < chunkCount; i++) {
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, file.size);
+      const chunk = file.slice(start, end);
+
+      await fetch(upload_urls[i], {
+        method: 'PUT',
+        headers: {
+          'Content-Type': media_type,
+          'x-amz-acl': 'private'
+        },
+        body: chunk
+      });
+
+      uploadedBytes += (end - start);
+      const pct = Math.round((uploadedBytes / file.size) * 100);
+      barEl.style.width = pct + '%';
+    }
+
+    statusEl.textContent = 'Done ✓';
+    statusEl.classList.add('done');
+  } catch (err) {
+    statusEl.textContent = 'Failed — ' + err.message;
+    statusEl.classList.add('error');
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>

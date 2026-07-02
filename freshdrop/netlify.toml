@@ -1,0 +1,18 @@
+[build]
+  functions = "netlify/functions"
+  publish = "public"
+
+[[redirects]]
+  from = "/connect"
+  to = "/.netlify/functions/oauth-start"
+  status = 200
+
+[[redirects]]
+  from = "/oauth/callback"
+  to = "/.netlify/functions/oauth-callback"
+  status = 200
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
