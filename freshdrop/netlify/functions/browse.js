@@ -1,102 +1,110 @@
-# FreshDrop — Frame.io client upload portal
+const { getValidAccessToken, loadTokens } = require('./_lib/tokens');
 
-Give clients a link. They drop files in. Files land straight in a Frame.io folder.
-No client login, no seat cost, no third-party SaaS fee.
+// GET /api/browse?key=YOUR_ADMIN_SECRET
+// Lists your workspaces -> projects -> top-level folders, with real API IDs,
+// so you can copy the correct folder_id instead of guessing from a browser URL.
 
-## How it works
-
-- You connect your Frame.io account **once** (`/connect`) — this is the only login involved.
-- Clients get a link like `https://yoursite.netlify.app/?folder=FOLDER_ID&client=Ana`
-- When they drop a file, the browser asks your backend for an upload slot, then uploads
-  the file straight to Frame.io's storage (Amazon S3) — the file bytes never pass through
-  Netlify, so there's no size limit imposed by us.
-
-## One-time setup
-
-### 1. Environment variables (Netlify → Site settings → Environment variables)
-
-| Variable | Value |
-|---|---|
-| `ADOBE_CLIENT_ID` | From Adobe Developer Console → your OAuth Web App credential |
-| `ADOBE_CLIENT_SECRET` | Same page |
-| `ADOBE_REDIRECT_URI` | `https://YOUR-SITE.netlify.app/oauth/callback` — must exactly match what's in Adobe Console |
-| `ADMIN_SECRET` | Any password you make up — protects the `/connect` route so randoms can't hijack your Frame.io login |
-| `NETLIFY_SITE_ID` | Netlify → Site settings → General → Site details → "Site ID" |
-| `NETLIFY_BLOBS_TOKEN` | A Personal Access Token: click your avatar (top right in Netlify) → User settings → Applications → Personal access tokens → New access token |
-
-### 2. Update Adobe Developer Console
-
-Once your site has a real Netlify URL, go back to your OAuth Web App credential and set:
-- **Default redirect URI**: `https://YOUR-SITE.netlify.app/oauth/callback`
-- **Redirect URI pattern**: `https://YOUR-SITE\.netlify\.app/oauth/callback` (note the escaped dots)
-
-### 3. Connect your Frame.io account
-
-Visit `https://YOUR-SITE.netlify.app/connect?key=YOUR_ADMIN_SECRET` in a browser, log in with
-your Adobe ID, approve access. You should land on a page confirming your Frame.io account ID.
-This only needs to happen again if the refresh token eventually expires (Adobe's refresh
-tokens are long-lived but not permanent).
-
-### 4. Find a folder ID
-
-In Frame.io, open the folder you want a client uploading into. The folder ID is in the URL,
-or via the API (`GET /v4/accounts/{account_id}/projects` → drill into folders).
-
-### 5. Send the link
-
-```
-https://YOUR-SITE.netlify.app/?folder=FOLDER_ID&client=Ana%20Torres
-```
-
-The `client` param is just cosmetic (shows their name on the page) — it's the `folder` param
-that determines where files land. Different folder ID = different link = different destination.
-
-## One thing to verify before relying on this
-
-The request body in `netlify/functions/create-upload.js` for Frame.io's "Create File (local
-upload)" endpoint is our best reading of the public docs and SDK signature — Frame.io's fully
-authenticated API reference wasn't accessible to confirm the exact field names. Before sending
-this to a real client, run one test upload yourself first. If Frame.io returns a 422 or similar
-validation error, the response body will say which field it didn't like — that's the only
-function that would need adjusting.
-
-## Local file map
-
-```
-netlify.toml                        — routing config
-package.json                        — one dependency (Netlify Blobs, for token storage)
-netlify/functions/oauth-start.js    — kicks off your one-time login
-netlify/functions/oauth-callback.js — receives the login, stores tokens
-netlify/functions/create-upload.js  — client-facing: registers a file, returns S3 upload URLs
-netlify/functions/_lib/tokens.js    — shared token storage + auto-refresh logic
-public/index.html                   — the page clients actually see and drop files into
-```
-
-[build]
-  functions = "netlify/functions"
-  publish = "public"
-
-[[redirects]]
-  from = "/connect"
-  to = "/.netlify/functions/oauth-start"
-  status = 200
-
-[[redirects]]
-  from = "/oauth/callback"
-  to = "/.netlify/functions/oauth-callback"
-  status = 200
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
-{
-  "name": "freshdrop",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Client upload portal that pushes files straight into a Frame.io V4 folder",
-  "dependencies": {
-    "@netlify/blobs": "^7.0.0"
+exports.handler = async (event) => {
+  const key = event.queryStringParameters && event.queryStringParameters.key;
+  if (!process.env.ADMIN_SECRET || key !== process.env.ADMIN_SECRET) {
+    return { statusCode: 403, body: 'Not authorized.' };
   }
+
+  let accessToken, accountId;
+  try {
+    accessToken = await getValidAccessToken();
+    accountId = (await loadTokens()).account_id;
+  } catch (err) {
+    return html(`Auth error: ${escapeHtml(err.message)}. Try /connect again.`);
+  }
+
+  const headers = { Authorization: `Bearer ${accessToken}` };
+  const log = [];
+  let out = '';
+
+  try {
+    const wsRes = await fetch(`https://api.frame.io/v4/accounts/${accountId}/workspaces`, { headers });
+    const wsJson = await wsRes.json();
+    log.push(`GET /workspaces -> ${wsRes.status}`);
+
+    if (!wsRes.ok) {
+      return html(`Workspaces call failed (${wsRes.status}): ${escapeHtml(JSON.stringify(wsJson))}`);
+    }
+
+    const workspaces = wsJson.data || [];
+    if (workspaces.length === 0) {
+      return html('No workspaces returned for this account. This may be the known "empty workspaces" provisioning issue.');
+    }
+
+    for (const ws of workspaces) {
+      out += `<h2>Workspace: ${escapeHtml(ws.name)} <code>${ws.id}</code></h2>`;
+
+      const projRes = await fetch(
+        `https://api.frame.io/v4/accounts/${accountId}/workspaces/${ws.id}/projects`,
+        { headers }
+      );
+      const projJson = await projRes.json();
+      log.push(`GET /workspaces/${ws.id}/projects -> ${projRes.status}`);
+
+      if (!projRes.ok) {
+        out += `<p>Failed to load projects: ${escapeHtml(JSON.stringify(projJson))}</p>`;
+        continue;
+      }
+
+      const projects = projJson.data || [];
+      for (const proj of projects) {
+        out += `<h3>Project: ${escapeHtml(proj.name)}</h3>`;
+        const rootFolderId = proj.root_folder_id || proj.root_asset_id;
+
+        if (!rootFolderId) {
+          out += `<p>(no root folder id on this project object - raw: ${escapeHtml(JSON.stringify(proj))})</p>`;
+          continue;
+        }
+
+        out += `<p>Root folder ID: <code>${rootFolderId}</code></p>`;
+
+        const childRes = await fetch(
+          `https://api.frame.io/v4/accounts/${accountId}/folders/${rootFolderId}/children`,
+          { headers }
+        );
+        const childJson = await childRes.json();
+        log.push(`GET /folders/${rootFolderId}/children -> ${childRes.status}`);
+
+        if (!childRes.ok) {
+          out += `<p>Couldn't list contents: ${escapeHtml(JSON.stringify(childJson))}</p>`;
+          continue;
+        }
+
+        const children = childJson.data || [];
+        const folders = children.filter(c => c.type === 'folder');
+        if (folders.length === 0) {
+          out += `<p><em>No subfolders - you can upload straight to the root folder ID above.</em></p>`;
+        } else {
+          out += '<ul>';
+          for (const f of folders) {
+            out += `<li>${escapeHtml(f.name)} - <code>${f.id}</code></li>`;
+          }
+          out += '</ul>';
+        }
+      }
+    }
+
+    return html(out + `<hr><pre style="color:#888;font-size:0.8rem;">${escapeHtml(log.join('\n'))}</pre>`);
+  } catch (err) {
+    return html(`Unexpected error: ${escapeHtml(err.message)}<br><pre>${escapeHtml(log.join('\n'))}</pre>`);
+  }
+};
+
+function html(body) {
+  return {
+    statusCode: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    body: `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:2rem;max-width:700px;">${body}</body></html>`
+  };
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
 }
