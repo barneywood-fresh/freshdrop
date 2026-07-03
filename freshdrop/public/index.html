@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FreshDrop — Upload footage</title>
+<title>FreshDrop - Upload footage</title>
 <style>
   :root { --accent: #2563eb; --bg: #fafafa; --border: #e2e2e2; }
   * { box-sizing: border-box; }
@@ -48,7 +48,7 @@
 <body>
 <div class="wrap">
   <h1>FreshDrop</h1>
-  <p class="sub" id="subtitle">Drag files in, or click to browse. Files go straight in — no account needed.</p>
+  <p class="sub" id="subtitle">Drag files in, or click to browse. Files go straight in - no account needed.</p>
 
   <div id="dropzone">
     <p>Drop files here, or click to select</p>
@@ -57,7 +57,7 @@
 
   <div id="fileList"></div>
   <div id="missing-folder" style="display:none;">
-    This upload link is missing a destination — ask whoever sent it to you for a valid link.
+    This upload link is missing a destination - ask whoever sent it to you for a valid link.
   </div>
 </div>
 
@@ -99,7 +99,7 @@ async function uploadFile(file) {
   row.className = 'file-row';
   row.innerHTML = `
     <div class="name">${escapeHtml(file.name)}</div>
-    <div class="status">Preparing upload…</div>
+    <div class="status">Preparing upload...</div>
     <div class="bar-bg"><div class="bar-fill"></div></div>
   `;
   fileList.prepend(row);
@@ -127,35 +127,42 @@ async function uploadFile(file) {
       throw new Error('No upload URL returned');
     }
 
-    statusEl.textContent = 'Uploading…';
+    statusEl.textContent = 'Uploading...';
 
     const chunkCount = upload_urls.length;
     const chunkSize = Math.ceil(file.size / chunkCount);
     let uploadedBytes = 0;
+    let completedChunks = 0;
 
-    for (let i = 0; i < chunkCount; i++) {
+    const chunkUploads = upload_urls.map((uploadUrl, i) => {
       const start = i * chunkSize;
       const end = Math.min(start + chunkSize, file.size);
       const chunk = file.slice(start, end);
 
-      await fetch(upload_urls[i], {
+      return fetch(uploadUrl, {
         method: 'PUT',
         headers: {
           'Content-Type': media_type,
           'x-amz-acl': 'private'
         },
         body: chunk
+      }).then((res) => {
+        if (!res.ok) {
+          throw new Error(`Part ${i + 1} of ${chunkCount} failed (status ${res.status})`);
+        }
+        completedChunks++;
+        uploadedBytes += (end - start);
+        const pct = Math.round((completedChunks / chunkCount) * 100);
+        barEl.style.width = pct + '%';
       });
+    });
 
-      uploadedBytes += (end - start);
-      const pct = Math.round((uploadedBytes / file.size) * 100);
-      barEl.style.width = pct + '%';
-    }
+    await Promise.all(chunkUploads);
 
-    statusEl.textContent = 'Done ✓';
+    statusEl.textContent = 'Done';
     statusEl.classList.add('done');
   } catch (err) {
-    statusEl.textContent = 'Failed — ' + err.message;
+    statusEl.textContent = 'Failed - ' + err.message;
     statusEl.classList.add('error');
   }
 }
