@@ -4,19 +4,43 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FreshDrop - Upload footage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600;900&display=swap" rel="stylesheet">
 <style>
-  :root { --accent: #2563eb; --bg: #fafafa; --border: #e2e2e2; }
+  :root {
+    --midnight: #03031f;
+    --zing: #defe03;
+    --white: #ffffff;
+    --bg: #f4f4f6;
+    --border: #e2e2e6;
+    --text: #1a1a1a;
+    --muted: #6b6b78;
+  }
   * { box-sizing: border-box; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Exo 2', -apple-system, BlinkMacSystemFont, sans-serif;
     background: var(--bg);
     margin: 0;
-    padding: 3rem 1.5rem;
-    color: #1a1a1a;
+    color: var(--text);
   }
-  .wrap { max-width: 560px; margin: 0 auto; }
-  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
-  p.sub { color: #666; margin-top: 0; margin-bottom: 2rem; }
+  header {
+    background: var(--midnight);
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+  }
+  header img {
+    height: 28px;
+    width: auto;
+    display: block;
+  }
+  main {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+  }
+  p.sub { color: var(--muted); margin-top: 0; margin-bottom: 2rem; font-weight: 300; }
   #dropzone {
     border: 2px dashed var(--border);
     border-radius: 12px;
@@ -24,10 +48,10 @@
     text-align: center;
     background: white;
     cursor: pointer;
-    transition: border-color 0.15s;
+    transition: border-color 0.15s, background 0.15s;
   }
-  #dropzone.drag { border-color: var(--accent); background: #f0f5ff; }
-  #dropzone p { margin: 0; color: #555; }
+  #dropzone.drag { border-color: var(--zing); background: #fdffe8; }
+  #dropzone p { margin: 0; color: var(--muted); font-weight: 400; }
   input[type=file] { display: none; }
   .file-row {
     background: white;
@@ -37,38 +61,87 @@
     margin-top: 0.75rem;
   }
   .file-row .name { font-size: 0.9rem; font-weight: 600; word-break: break-all; }
-  .file-row .status { font-size: 0.8rem; color: #666; margin-top: 0.25rem; }
+  .file-row .status { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
   .bar-bg { background: #eee; border-radius: 4px; height: 6px; margin-top: 0.5rem; overflow: hidden; }
-  .bar-fill { background: var(--accent); height: 100%; width: 0%; transition: width 0.2s; }
+  .bar-fill { background: var(--midnight); height: 100%; width: 0%; transition: width 0.2s; }
   .error { color: #c0392b; }
   .done { color: #1a8c4a; }
   #missing-folder { color: #c0392b; text-align: center; margin-top: 2rem; }
+
+  .section-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin: 2.5rem 0 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .section-title button {
+    font-family: inherit;
+    font-size: 0.75rem;
+    color: var(--muted);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.25rem 0.6rem;
+    cursor: pointer;
+  }
+  .existing-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+  }
+  .existing-row:last-child { border-bottom: none; }
+  .existing-row .fname { font-weight: 600; word-break: break-all; padding-right: 1rem; }
+  .existing-row .fmeta { color: var(--muted); white-space: nowrap; text-align: right; }
+  .existing-empty { color: var(--muted); font-size: 0.85rem; font-weight: 300; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>FreshDrop</h1>
-  <p class="sub" id="subtitle">Drag files in, or click to browse. Files go straight in - no account needed.</p>
+<header>
+  <img src="/assets/fresh-logo.png" alt="Fresh">
+</header>
+
+<main>
+  <p class="sub" id="subtitle">Drag files in, or click to browse. Files go straight into Frame.io - no account needed.</p>
+
   <div id="dropzone">
     <p>Drop files here, or click to select</p>
     <input type="file" id="fileInput" multiple>
   </div>
+
   <div id="fileList"></div>
   <div id="missing-folder" style="display:none;">
     This upload link is missing a destination - ask whoever sent it to you for a valid link.
   </div>
-</div>
+
+  <div id="existing-section" style="display:none;">
+    <div class="section-title">
+      <span>Already in this folder</span>
+      <button id="refreshBtn" type="button">Refresh</button>
+    </div>
+    <div id="existingList"></div>
+  </div>
+</main>
+
 <script>
 const params = new URLSearchParams(window.location.search);
 const folderId = params.get('folder');
 const clientLabel = params.get('client');
+
 if (clientLabel) {
   document.getElementById('subtitle').textContent =
     `Upload for ${clientLabel}. Drag files in, or click to browse.`;
 }
+
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 const fileList = document.getElementById('fileList');
+const existingSection = document.getElementById('existing-section');
+const existingList = document.getElementById('existingList');
+
 if (!folderId) {
   dropzone.style.display = 'none';
   document.getElementById('missing-folder').style.display = 'block';
@@ -82,10 +155,39 @@ if (!folderId) {
     handleFiles(e.dataTransfer.files);
   });
   fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+  existingSection.style.display = 'block';
+  document.getElementById('refreshBtn').addEventListener('click', loadExistingFiles);
+  loadExistingFiles();
 }
+
 function handleFiles(fileArray) {
   Array.from(fileArray).forEach(uploadFile);
 }
+
+async function loadExistingFiles() {
+  existingList.innerHTML = '<p class="existing-empty">Loading...</p>';
+  try {
+    const res = await fetch(`/api/folder-contents?folder=${encodeURIComponent(folderId)}`);
+    if (!res.ok) throw new Error('Could not load folder contents');
+    const { items } = await res.json();
+
+    if (!items || items.length === 0) {
+      existingList.innerHTML = '<p class="existing-empty">Nothing uploaded yet.</p>';
+      return;
+    }
+
+    existingList.innerHTML = items.map((item) => `
+      <div class="existing-row">
+        <div class="fname">${escapeHtml(item.name)}</div>
+        <div class="fmeta">${formatBytes(item.size)} · ${formatRelativeTime(item.created_at)}</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    existingList.innerHTML = '<p class="existing-empty">Couldn\'t load folder contents right now.</p>';
+  }
+}
+
 async function uploadFile(file) {
   const row = document.createElement('div');
   row.className = 'file-row';
@@ -97,6 +199,7 @@ async function uploadFile(file) {
   fileList.prepend(row);
   const statusEl = row.querySelector('.status');
   const barEl = row.querySelector('.bar-fill');
+
   try {
     const createRes = await fetch('/api/create-upload', {
       method: 'POST',
@@ -108,54 +211,115 @@ async function uploadFile(file) {
         content_type: file.type || 'application/octet-stream'
       })
     });
+
     if (!createRes.ok) {
       throw new Error(await createRes.text());
     }
-    const parsed = await createRes.json();
-    console.log('FreshDrop debug - create-upload response:', parsed);
-    const { upload_urls, media_type } = parsed;
+
+    const { upload_urls, media_type } = await createRes.json();
     if (!upload_urls || upload_urls.length === 0) {
       throw new Error('No upload URL returned');
     }
+
     statusEl.textContent = 'Uploading...';
-    const chunkCount = upload_urls.length;
-    let completedChunks = 0;
+
+    const totalBytes = file.size;
+    const loadedPerPart = new Array(upload_urls.length).fill(0);
+    const startTime = performance.now();
     let offset = 0;
+
+    function updateProgress() {
+      const loaded = loadedPerPart.reduce((a, b) => a + b, 0);
+      const elapsedSec = (performance.now() - startTime) / 1000;
+      const pct = Math.round((loaded / totalBytes) * 100);
+      barEl.style.width = pct + '%';
+
+      if (elapsedSec > 0.3 && loaded > 0) {
+        const bytesPerSec = loaded / elapsedSec;
+        const remaining = totalBytes - loaded;
+        const etaSec = bytesPerSec > 0 ? remaining / bytesPerSec : 0;
+        statusEl.textContent =
+          `Uploading... ${pct}% · ${formatBytes(bytesPerSec)}/s` +
+          (etaSec > 1 ? ` · ~${formatDuration(etaSec)} left` : '');
+      } else {
+        statusEl.textContent = `Uploading... ${pct}%`;
+      }
+    }
+
     const chunkUploads = upload_urls.map((part, i) => {
       const start = offset;
       const end = start + part.size;
       offset = end;
       const chunk = file.slice(start, end);
-      return fetch(part.url, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': media_type,
-          'x-amz-acl': 'private'
-        },
-        body: chunk
-      }).then(async (res) => {
-        if (!res.ok) {
-          const bodyText = await res.text().catch(() => '(could not read body)');
-          console.log(`FreshDrop debug - part ${i + 1} failed`, {
-            status: res.status,
-            url: part.url,
-            responseBody: bodyText
-          });
-          throw new Error(`Part ${i + 1} of ${chunkCount} failed (status ${res.status})`);
-        }
-        completedChunks++;
-        const pct = Math.round((completedChunks / chunkCount) * 100);
-        barEl.style.width = pct + '%';
+
+      return uploadPartXHR(part.url, chunk, media_type, (loadedBytes) => {
+        loadedPerPart[i] = loadedBytes;
+        updateProgress();
       });
     });
+
     await Promise.all(chunkUploads);
+
     statusEl.textContent = 'Done';
     statusEl.classList.add('done');
+    barEl.style.width = '100%';
+    loadExistingFiles();
   } catch (err) {
     statusEl.textContent = 'Failed - ' + err.message;
     statusEl.classList.add('error');
   }
 }
+
+function uploadPartXHR(url, blob, mediaType, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    xhr.setRequestHeader('Content-Type', mediaType);
+    xhr.setRequestHeader('x-amz-acl', 'private');
+
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) onProgress(e.loaded);
+    });
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress(blob.size);
+        resolve();
+      } else {
+        reject(new Error(`Upload failed (status ${xhr.status})`));
+      }
+    });
+
+    xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+    xhr.send(blob);
+  });
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function formatDuration(seconds) {
+  if (seconds < 60) return `${Math.ceil(seconds)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}m ${secs}s`;
+}
+
+function formatRelativeTime(isoString) {
+  if (!isoString) return '';
+  const then = new Date(isoString).getTime();
+  if (isNaN(then)) return '';
+  const diffSec = Math.max(0, (Date.now() - then) / 1000);
+  if (diffSec < 60) return 'just now';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  return `${Math.floor(diffSec / 86400)}d ago`;
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
