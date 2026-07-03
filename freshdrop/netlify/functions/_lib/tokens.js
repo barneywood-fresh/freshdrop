@@ -9,8 +9,12 @@ const STORE_NAME = 'silosync-auth';
 const TOKEN_KEY = 'frameio-tokens';
 
 function store() {
-  return getStore(STORE_NAME);
-}
+     return getStore({
+       name: STORE_NAME,
+       siteID: process.env.NETLIFY_SITE_ID,
+       token: process.env.NETLIFY_BLOBS_TOKEN
+     });
+   }
 
 async function saveTokens(data) {
   await store().setJSON(TOKEN_KEY, data);
