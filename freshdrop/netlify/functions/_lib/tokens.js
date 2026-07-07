@@ -9,12 +9,12 @@ const STORE_NAME = 'silosync-auth';
 const TOKEN_KEY = 'frameio-tokens';
 
 function store() {
-     return getStore({
-       name: STORE_NAME,
-       siteID: process.env.NETLIFY_SITE_ID,
-       token: process.env.NETLIFY_BLOBS_TOKEN
-     });
-   }
+  return getStore({
+    name: STORE_NAME,
+    siteID: process.env.NETLIFY_SITE_ID,
+    token: process.env.NETLIFY_BLOBS_TOKEN
+  });
+}
 
 async function saveTokens(data) {
   await store().setJSON(TOKEN_KEY, data);
@@ -59,6 +59,8 @@ async function exchangeCodeForTokens(code) {
 
 // Uses the stored refresh token to mint a fresh access token.
 async function refreshAccessToken(refreshToken) {
+  const existing = await loadTokens();
+
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     client_id: process.env.ADOBE_CLIENT_ID,
@@ -79,8 +81,9 @@ async function refreshAccessToken(refreshToken) {
 
   const json = await res.json();
   const record = {
+    ...existing,
     access_token: json.access_token,
-    // Adobe may or may not rotate the refresh token — keep the old one if a new one isn't returned
+    // Adobe may or may not rotate the refresh token, keep the old one if a new one isn't returned
     refresh_token: json.refresh_token || refreshToken,
     expires_at: Date.now() + (json.expires_in * 1000) - 60000
   };
