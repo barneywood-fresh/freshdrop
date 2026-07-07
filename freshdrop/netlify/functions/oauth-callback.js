@@ -29,8 +29,8 @@ exports.handler = async (event) => {
     }
     await saveTokens({ ...tokens, account_id: account.id });
     return html(
-      `✅ Connected. Frame.io account ID: <code>${account.id}</code>. ` +
-      `You can close this tab - the upload portal is ready to use.`
+      `Connected. Frame.io account ID: <code>${account.id}</code>. ` +
+      `You can close this tab, the upload portal is ready to use.`
     );
   } catch (err) {
     return html(`Something went wrong: ${escapeHtml(err.message)}`);
