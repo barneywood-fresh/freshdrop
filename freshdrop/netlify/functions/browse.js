@@ -33,7 +33,7 @@ exports.handler = async (event) => {
 
     const workspaces = wsJson.data || [];
     if (workspaces.length === 0) {
-      return html('No workspaces returned for this account. This may be the known "empty workspaces" provisioning issue.');
+      return html('No workspaces returned for this account. This may be the known "empty workspaces" provisioning issue — worth a Frame.io support ticket.');
     }
 
     for (const ws of workspaces) {
@@ -57,7 +57,7 @@ exports.handler = async (event) => {
         const rootFolderId = proj.root_folder_id || proj.root_asset_id;
 
         if (!rootFolderId) {
-          out += `<p>(no root folder id on this project object - raw: ${escapeHtml(JSON.stringify(proj))})</p>`;
+          out += `<p>(no root folder id on this project object — raw: ${escapeHtml(JSON.stringify(proj))})</p>`;
           continue;
         }
 
@@ -78,11 +78,11 @@ exports.handler = async (event) => {
         const children = childJson.data || [];
         const folders = children.filter(c => c.type === 'folder');
         if (folders.length === 0) {
-          out += `<p><em>No subfolders - you can upload straight to the root folder ID above.</em></p>`;
+          out += `<p><em>No subfolders — you can upload straight to the root folder ID above.</em></p>`;
         } else {
           out += '<ul>';
           for (const f of folders) {
-            out += `<li>${escapeHtml(f.name)} - <code>${f.id}</code></li>`;
+            out += `<li>${escapeHtml(f.name)} — <code>${f.id}</code></li>`;
           }
           out += '</ul>';
         }

@@ -1,13 +1,19 @@
 const { getValidAccessToken, loadTokens } = require('./_lib/tokens');
+const { getStore } = require('@netlify/blobs');
+
+const PORTAL_STORE = 'freshdrop-portals';
+
+function portalStore() {
+  return getStore({
+    name: PORTAL_STORE,
+    siteID: process.env.NETLIFY_SITE_ID,
+    token: process.env.NETLIFY_BLOBS_TOKEN
+  });
+}
 
 // POST /api/create-upload
-// body: { folder_id, file_name, file_size, content_type }
+// body: { portal, file_name, file_size, content_type }
 // returns: { file_id, upload_urls: [...] }
-//
-// NOTE: the exact request shape below (`data: { name, file_size, media_type }`)
-// is our best read of the docs + SDK signature. If your Postman test of
-// "Create File (local upload)" showed a different field name or nesting,
-// this is the only place that needs to change.
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -21,10 +27,16 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: 'Invalid JSON body' };
   }
 
-  const { folder_id, file_name, file_size, content_type } = payload;
-  if (!folder_id || !file_name || !file_size) {
-    return { statusCode: 400, body: 'folder_id, file_name and file_size are required' };
+  const { portal, file_name, file_size, content_type } = payload;
+  if (!portal || !file_name || !file_size) {
+    return { statusCode: 400, body: 'portal, file_name and file_size are required' };
   }
+
+  const portalConfig = await portalStore().get(portal, { type: 'json' });
+  if (!portalConfig) {
+    return { statusCode: 404, body: 'Unknown portal link' };
+  }
+  const folderId = portalConfig.folder_id;
 
   let accessToken, accountId;
   try {
@@ -37,11 +49,7 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: `Auth error: ${err.message}` };
   }
 
-  if (!accountId) {
-    return { statusCode: 500, body: 'No Frame.io account ID stored — reconnect via /connect' };
-  }
-
-  const url = `https://api.frame.io/v4/accounts/${accountId}/folders/${folder_id}/files`;
+  const url = `https://api.frame.io/v4/accounts/${accountId}/folders/${folderId}/files`;
 
   const res = await fetch(url, {
     method: 'POST',
