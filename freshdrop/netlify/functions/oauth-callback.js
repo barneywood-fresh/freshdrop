@@ -50,7 +50,7 @@ exports.handler = async (event) => {
 function html(message) {
   return {
     statusCode: 200,
-    headers: { 'Content-Type': 'text/html' },
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
     body: `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:2rem;">${message}</body></html>`
   };
 }
