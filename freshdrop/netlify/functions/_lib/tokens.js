@@ -83,7 +83,7 @@ async function refreshAccessToken(refreshToken) {
   const record = {
     ...existing,
     access_token: json.access_token,
-    // Adobe may or may not rotate the refresh token, keep the old one if a new one isn't returned
+    // Adobe may or may not rotate the refresh token — keep the old one if a new one isn't returned
     refresh_token: json.refresh_token || refreshToken,
     expires_at: Date.now() + (json.expires_in * 1000) - 60000
   };

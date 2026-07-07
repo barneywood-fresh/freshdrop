@@ -24,23 +24,48 @@
     margin: 0;
     color: var(--text);
   }
-  header {
+  header { background: var(--midnight); padding: 1.25rem 1.5rem; display: flex; align-items: center; }
+  header img { height: 28px; width: auto; display: block; }
+  main { max-width: 600px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+  p.sub { color: var(--muted); margin-top: 0; margin-bottom: 1.5rem; font-weight: 300; }
+  .welcome-box {
+    background: white;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--zing);
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+  }
+  #gate {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem 1.5rem;
+    text-align: center;
+  }
+  #gate p { margin-top: 0; color: var(--muted); font-size: 0.9rem; }
+  #gate input {
+    width: 100%;
+    max-width: 320px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+  }
+  #gate button {
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 0.9rem;
     background: var(--midnight);
-    padding: 1.25rem 1.5rem;
-    display: flex;
-    align-items: center;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.7rem 1.4rem;
+    cursor: pointer;
   }
-  header img {
-    height: 28px;
-    width: auto;
-    display: block;
-  }
-  main {
-    max-width: 600px;
-    margin: 0 auto;
-    padding: 2.5rem 1.5rem 4rem;
-  }
-  p.sub { color: var(--muted); margin-top: 0; margin-bottom: 2rem; font-weight: 300; }
   #dropzone {
     border: 2px dashed var(--border);
     border-radius: 12px;
@@ -95,6 +120,7 @@
   }
   .existing-row:last-child { border-bottom: none; }
   .existing-row .fname { font-weight: 600; word-break: break-all; padding-right: 1rem; }
+  .existing-row .fsub { color: var(--muted); font-size: 0.78rem; margin-top: 0.15rem; }
   .existing-row .fmeta { color: var(--muted); white-space: nowrap; text-align: right; }
   .existing-empty { color: var(--muted); font-size: 0.85rem; font-weight: 300; }
 </style>
@@ -106,46 +132,64 @@
 
 <main>
   <p class="sub" id="subtitle">Drag files in, or click to browse. Files go straight into Frame.io - no account needed.</p>
+  <div class="welcome-box" id="welcomeBox" style="display:none;"></div>
 
-  <div id="dropzone">
-    <p>Drop files here, or click to select</p>
-    <input type="file" id="fileInput" multiple>
+  <div id="gate" style="display:none;">
+    <p>Enter your name or email so we know who uploaded what.</p>
+    <input type="text" id="uploaderInput" placeholder="Your name or email">
+    <br>
+    <button id="gateBtn" type="button">Continue</button>
   </div>
 
-  <div id="fileList"></div>
+  <div id="uploadArea" style="display:none;">
+    <div id="dropzone">
+      <p>Drop files here, or click to select</p>
+      <input type="file" id="fileInput" multiple>
+    </div>
+
+    <div id="fileList"></div>
+
+    <div id="existing-section">
+      <div class="section-title">
+        <span>Already in this folder</span>
+        <button id="refreshBtn" type="button">Refresh</button>
+      </div>
+      <div id="existingList"></div>
+    </div>
+  </div>
+
   <div id="missing-folder" style="display:none;">
     This upload link is missing a destination - ask whoever sent it to you for a valid link.
-  </div>
-
-  <div id="existing-section" style="display:none;">
-    <div class="section-title">
-      <span>Already in this folder</span>
-      <button id="refreshBtn" type="button">Refresh</button>
-    </div>
-    <div id="existingList"></div>
   </div>
 </main>
 
 <script>
 const params = new URLSearchParams(window.location.search);
-const folderId = params.get('folder');
-const clientLabel = params.get('client');
+const portalId = params.get('p');
 
-if (clientLabel) {
-  document.getElementById('subtitle').textContent =
-    `Upload for ${clientLabel}. Drag files in, or click to browse.`;
-}
-
+const gateEl = document.getElementById('gate');
+const uploadAreaEl = document.getElementById('uploadArea');
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 const fileList = document.getElementById('fileList');
-const existingSection = document.getElementById('existing-section');
 const existingList = document.getElementById('existingList');
 
-if (!folderId) {
-  dropzone.style.display = 'none';
+let uploaderName = '';
+
+if (!portalId) {
   document.getElementById('missing-folder').style.display = 'block';
 } else {
+  loadPortalConfig();
+
+  document.getElementById('gateBtn').addEventListener('click', () => {
+    const val = document.getElementById('uploaderInput').value.trim();
+    if (!val) return;
+    uploaderName = val;
+    gateEl.style.display = 'none';
+    uploadAreaEl.style.display = 'block';
+    loadExistingFiles();
+  });
+
   dropzone.addEventListener('click', () => fileInput.click());
   dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
   dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
@@ -155,10 +199,28 @@ if (!folderId) {
     handleFiles(e.dataTransfer.files);
   });
   fileInput.addEventListener('change', () => handleFiles(fileInput.files));
-
-  existingSection.style.display = 'block';
   document.getElementById('refreshBtn').addEventListener('click', loadExistingFiles);
-  loadExistingFiles();
+}
+
+async function loadPortalConfig() {
+  try {
+    const res = await fetch(`/api/portal-config?p=${encodeURIComponent(portalId)}`);
+    if (!res.ok) throw new Error('not found');
+    const { welcome_message, client_label } = await res.json();
+
+    if (client_label) {
+      document.getElementById('subtitle').textContent =
+        `Upload for ${client_label}. Drag files in, or click to browse.`;
+    }
+    if (welcome_message) {
+      const box = document.getElementById('welcomeBox');
+      box.textContent = welcome_message;
+      box.style.display = 'block';
+    }
+    gateEl.style.display = 'block';
+  } catch (err) {
+    document.getElementById('missing-folder').style.display = 'block';
+  }
 }
 
 function handleFiles(fileArray) {
@@ -168,7 +230,7 @@ function handleFiles(fileArray) {
 async function loadExistingFiles() {
   existingList.innerHTML = '<p class="existing-empty">Loading...</p>';
   try {
-    const res = await fetch(`/api/folder-contents?folder=${encodeURIComponent(folderId)}`);
+    const res = await fetch(`/api/folder-contents?p=${encodeURIComponent(portalId)}`);
     if (!res.ok) throw new Error('Could not load folder contents');
     const { items } = await res.json();
 
@@ -179,8 +241,11 @@ async function loadExistingFiles() {
 
     existingList.innerHTML = items.map((item) => `
       <div class="existing-row">
-        <div class="fname">${escapeHtml(item.name)}</div>
-        <div class="fmeta">${formatBytes(item.size)} · ${formatRelativeTime(item.created_at)}</div>
+        <div>
+          <div class="fname">${escapeHtml(item.file_name)}</div>
+          <div class="fsub">by ${escapeHtml(item.uploader || 'Someone')}</div>
+        </div>
+        <div class="fmeta">${formatBytes(item.size)}<br>${formatRelativeTime(item.uploaded_at)}</div>
       </div>
     `).join('');
   } catch (err) {
@@ -205,7 +270,7 @@ async function uploadFile(file) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        folder_id: folderId,
+        portal: portalId,
         file_name: file.name,
         file_size: file.size,
         content_type: file.type || 'application/octet-stream'
@@ -239,8 +304,8 @@ async function uploadFile(file) {
         const remaining = totalBytes - loaded;
         const etaSec = bytesPerSec > 0 ? remaining / bytesPerSec : 0;
         statusEl.textContent =
-          `Uploading... ${pct}% · ${formatBytes(bytesPerSec)}/s` +
-          (etaSec > 1 ? ` · ~${formatDuration(etaSec)} left` : '');
+          `Uploading... ${pct}% - ${formatBytes(bytesPerSec)}/s` +
+          (etaSec > 1 ? ` - ~${formatDuration(etaSec)} left` : '');
       } else {
         statusEl.textContent = `Uploading... ${pct}%`;
       }
@@ -263,7 +328,17 @@ async function uploadFile(file) {
     statusEl.textContent = 'Done';
     statusEl.classList.add('done');
     barEl.style.width = '100%';
-    loadExistingFiles();
+
+    fetch('/api/log-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        portal: portalId,
+        uploader: uploaderName,
+        file_name: file.name,
+        size: file.size
+      })
+    }).finally(loadExistingFiles);
   } catch (err) {
     statusEl.textContent = 'Failed - ' + err.message;
     statusEl.classList.add('error');

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreshDrop - Set up a portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --midnight: #03031f;
+    --zing: #defe03;
+    --bg: #f4f4f6;
+    --border: #e2e2e6;
+    --text: #1a1a1a;
+    --muted: #6b6b78;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Exo 2', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    margin: 0;
+    color: var(--text);
+  }
+  header { background: var(--midnight); padding: 1.25rem 1.5rem; display: flex; align-items: center; }
+  header img { height: 28px; width: auto; }
+  main { max-width: 520px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+  h1 { font-size: 1.2rem; margin-bottom: 1.75rem; }
+  label { display: block; font-size: 0.85rem; font-weight: 600; margin: 1.25rem 0 0.35rem; }
+  label:first-of-type { margin-top: 0; }
+  select, input[type=text], input[type=email], textarea {
+    width: 100%;
+    font-family: inherit;
+    font-size: 0.9rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: white;
+  }
+  textarea { min-height: 70px; resize: vertical; }
+  .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.3rem; }
+  button {
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 0.9rem;
+    background: var(--midnight);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.75rem 1.25rem;
+    margin-top: 1.75rem;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #result {
+    display: none;
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  #result input { margin-top: 0.5rem; }
+  #result button { background: var(--zing); color: var(--midnight); margin-top: 0.75rem; }
+  #status { font-size: 0.85rem; color: var(--muted); margin-top: 1rem; }
+  #status.error { color: #c0392b; }
+</style>
+</head>
+<body>
+<header><img src="/fresh-logo.png" alt="Fresh"></header>
+<main>
+  <h1>Set up a new upload portal</h1>
+
+  <div id="loading">Loading your projects...</div>
+
+  <form id="portalForm" style="display:none;">
+    <label>Project / destination folder</label>
+    <select id="destSelect"></select>
+
+    <label>New subfolder name (optional)</label>
+    <input type="text" id="newFolderName" placeholder="e.g. Client Uploads">
+    <div class="hint">Leave blank to upload straight into the folder selected above.</div>
+
+    <label>Client / project label</label>
+    <input type="text" id="clientLabel" placeholder="e.g. Ana Torres - HY10">
+
+    <label>Welcome message shown to the client</label>
+    <textarea id="welcomeMessage" placeholder="e.g. Please upload your raw footage from the Berlin shoot here."></textarea>
+
+    <label>Notify this email when someone uploads</label>
+    <input type="email" id="notifyEmail" placeholder="you@fresh.co.uk">
+
+    <button type="submit" id="submitBtn">Create portal link</button>
+  </form>
+
+  <div id="status"></div>
+
+  <div id="result">
+    <strong>Your portal link:</strong>
+    <input type="text" id="resultLink" readonly>
+    <button id="copyBtn" type="button">Copy link</button>
+  </div>
+</main>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const adminKey = params.get('key');
+
+const loadingEl = document.getElementById('loading');
+const formEl = document.getElementById('portalForm');
+const destSelect = document.getElementById('destSelect');
+const statusEl = document.getElementById('status');
+const resultEl = document.getElementById('result');
+const resultLink = document.getElementById('resultLink');
+
+if (!adminKey) {
+  loadingEl.textContent = 'Missing ?key=... in the URL.';
+} else {
+  loadProjects();
+}
+
+async function loadProjects() {
+  try {
+    const res = await fetch(`/api/browse-json?key=${encodeURIComponent(adminKey)}`);
+    if (!res.ok) throw new Error('Could not load projects (' + res.status + ')');
+    const data = await res.json();
+
+    const options = [];
+    (data.workspaces || []).forEach((ws) => {
+      (ws.projects || []).forEach((proj) => {
+        options.push({ id: proj.root_folder_id, label: `${proj.name} (root)` });
+        (proj.folders || []).forEach((f) => {
+          options.push({ id: f.id, label: `${proj.name} / ${f.name}` });
+        });
+      });
+    });
+
+    destSelect.innerHTML = options
+      .map((o) => `<option value="${o.id}">${escapeHtml(o.label)}</option>`)
+      .join('');
+
+    loadingEl.style.display = 'none';
+    formEl.style.display = 'block';
+  } catch (err) {
+    loadingEl.textContent = 'Failed to load: ' + err.message;
+  }
+}
+
+formEl.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  document.getElementById('submitBtn').disabled = true;
+  statusEl.textContent = 'Creating portal...';
+  statusEl.className = '';
+  resultEl.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/create-portal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: adminKey,
+        destination_folder_id: destSelect.value,
+        new_folder_name: document.getElementById('newFolderName').value,
+        notify_email: document.getElementById('notifyEmail').value,
+        welcome_message: document.getElementById('welcomeMessage').value,
+        client_label: document.getElementById('clientLabel').value
+      })
+    });
+
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+
+    const { portal_id } = await res.json();
+    const link = `${window.location.origin}/?p=${portal_id}`;
+    resultLink.value = link;
+    resultEl.style.display = 'block';
+    statusEl.textContent = '';
+  } catch (err) {
+    statusEl.textContent = 'Failed: ' + err.message;
+    statusEl.className = 'error';
+  } finally {
+    document.getElementById('submitBtn').disabled = false;
+  }
+});
+
+document.getElementById('copyBtn').addEventListener('click', () => {
+  resultLink.select();
+  document.execCommand('copy');
+});
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>

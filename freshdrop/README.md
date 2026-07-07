@@ -21,6 +21,13 @@ No client login, no seat cost, no third-party SaaS fee.
 | `ADOBE_CLIENT_SECRET` | Same page |
 | `ADOBE_REDIRECT_URI` | `https://YOUR-SITE.netlify.app/oauth/callback` — must exactly match what's in Adobe Console |
 | `ADMIN_SECRET` | Any password you make up — protects the `/connect` route so randoms can't hijack your Frame.io login |
+| `NETLIFY_SITE_ID` | Netlify → Site settings → General → Site details → "Site ID" |
+| `NETLIFY_BLOBS_TOKEN` | A Personal Access Token: click your avatar (top right in Netlify) → User settings → Applications → Personal access tokens → New access token |
+| `RESEND_API_KEY` | From resend.com - free account, create an API key. Without domain verification, notification emails can only reliably reach the address you signed up to Resend with. |
+
+## Setting up a new client portal
+
+Visit `https://YOUR-SITE.netlify.app/admin.html?key=YOUR_ADMIN_SECRET` - pick a project/folder (or create a new subfolder), set a notification email, write a welcome message, and it hands you back a ready-to-send link like `https://YOUR-SITE.netlify.app/?p=abc123`. Clients enter their name/email once before uploading, and every upload is logged (visible in the page's "Already in this folder" panel) and emails the notify address.
 
 ### 2. Update Adobe Developer Console
 
