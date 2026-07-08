@@ -24,22 +24,37 @@ exports.handler = async (event) => {
       const text = await res.text();
       return html(
         `Connected to Adobe, but the Frame.io accounts lookup failed (${res.status}). ` +
-        `Response: ${escapeHtml(text)}. This may be the free-tier "empty workspaces" issue — ` +
+        `Response: ${escapeHtml(text)}. This may be the free-tier "empty workspaces" issue, ` +
         `worth checking that your Frame.io account is fully linked to Adobe Authentication.`
       );
     }
 
     const accountsJson = await res.json();
-    const account = accountsJson.data && accountsJson.data[0];
+    const accounts = accountsJson.data || [];
+
+    if (accounts.length === 0) {
+      return html('Connected, but no Frame.io accounts were returned for this login.');
+    }
+
+    const KNOWN_FRESH_ACCOUNT_ID = '797bdece-f14c-4d03-bca2-aa372237302c';
+    let account = accounts.find((a) => a.id === KNOWN_FRESH_ACCOUNT_ID);
+
+    if (!account && accounts.length === 1) {
+      account = accounts[0];
+    }
 
     if (!account) {
-      return html('Connected, but no Frame.io accounts were returned for this login.');
+      const list = accounts.map((a) => `${escapeHtml(a.name || '(unnamed)')} - <code>${a.id}</code>`).join('<br>');
+      return html(
+        `This Adobe login has access to multiple Frame.io accounts, and none matched the known Fresh account. ` +
+        `Here's what was returned:<br><br>${list}<br><br>Tell Claude which one is Fresh's real account so the code can be updated.`
+      );
     }
 
     await saveTokens({ ...tokens, account_id: account.id });
 
     return html(
-      `Connected. Frame.io account ID: <code>${account.id}</code>. ` +
+      `Connected. Frame.io account ID: <code>${account.id}</code>${account.name ? ` (${escapeHtml(account.name)})` : ''}. ` +
       `You can close this tab, the upload portal is ready to use.`
     );
   } catch (err) {
