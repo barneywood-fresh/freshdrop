@@ -176,6 +176,27 @@ const fileList = document.getElementById('fileList');
 const existingList = document.getElementById('existingList');
 
 let uploaderName = '';
+let activeUploads = 0;
+let wakeLock = null;
+
+async function acquireWakeLock() {
+  activeUploads++;
+  if (activeUploads === 1 && 'wakeLock' in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+    } catch (err) {
+      console.log('Wake lock not available:', err.message);
+    }
+  }
+}
+
+function releaseWakeLock() {
+  activeUploads = Math.max(0, activeUploads - 1);
+  if (activeUploads === 0 && wakeLock) {
+    wakeLock.release().catch(() => {});
+    wakeLock = null;
+  }
+}
 
 if (!portalId) {
   document.getElementById('missing-folder').style.display = 'block';
@@ -255,6 +276,7 @@ async function loadExistingFiles() {
 }
 
 async function uploadFile(file) {
+  await acquireWakeLock();
   const row = document.createElement('div');
   row.className = 'file-row';
   row.innerHTML = `
@@ -290,6 +312,7 @@ async function uploadFile(file) {
     statusEl.textContent = 'Uploading...';
 
     const totalBytes = file.size;
+    const chunkCount = upload_urls.length;
     const loadedPerPart = new Array(upload_urls.length).fill(0);
     const startTime = performance.now();
     let offset = 0;
@@ -318,10 +341,10 @@ async function uploadFile(file) {
       offset = end;
       const chunk = file.slice(start, end);
 
-      return uploadPartXHR(part.url, chunk, media_type, (loadedBytes) => {
+      return uploadPartWithRetry(part.url, chunk, media_type, (loadedBytes) => {
         loadedPerPart[i] = loadedBytes;
         updateProgress();
-      });
+      }, i, chunkCount, statusEl);
     });
 
     await Promise.all(chunkUploads);
@@ -340,10 +363,31 @@ async function uploadFile(file) {
         size: file.size
       })
     }).finally(loadExistingFiles);
+    releaseWakeLock();
   } catch (err) {
     statusEl.textContent = 'Failed - ' + err.message;
     statusEl.classList.add('error');
+    releaseWakeLock();
   }
+}
+
+function uploadPartWithRetry(url, blob, mediaType, onProgress, partIndex, totalParts, statusEl) {
+  const maxAttempts = 4;
+  let attempt = 0;
+
+  function tryOnce() {
+    attempt++;
+    return uploadPartXHR(url, blob, mediaType, onProgress).catch((err) => {
+      if (attempt >= maxAttempts) throw err;
+      if (statusEl) {
+        statusEl.textContent = `Connection interrupted, retrying part ${partIndex + 1}/${totalParts} (attempt ${attempt + 1})...`;
+      }
+      const delayMs = 1500 * attempt;
+      return new Promise((resolve) => setTimeout(resolve, delayMs)).then(tryOnce);
+    });
+  }
+
+  return tryOnce();
 }
 
 function uploadPartXHR(url, blob, mediaType, onProgress) {
