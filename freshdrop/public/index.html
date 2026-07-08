@@ -131,7 +131,7 @@
 </header>
 
 <main>
-  <p class="sub" id="subtitle">Drag files in, or click to browse. Files go straight into Frame.io - no account needed.</p>
+  <p class="sub" id="subtitle">Drop in your name or email - Then simply drag files in, or click to select. Files go straight into Frame.io - no account needed.</p>
   <div class="welcome-box" id="welcomeBox" style="display:none;"></div>
 
   <div id="gate" style="display:none;">
@@ -210,7 +210,7 @@ async function loadPortalConfig() {
 
     if (client_label) {
       document.getElementById('subtitle').textContent =
-        `Upload for ${client_label}. Drag files in, or click to browse.`;
+        `Upload for ${client_label}. Drag files in, or click to select.`;
     }
     if (welcome_message) {
       const box = document.getElementById('welcomeBox');
