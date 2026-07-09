@@ -28,8 +28,9 @@
   header img { height: 28px; width: auto; }
   main { max-width: 520px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
   h1 { font-size: 1.2rem; margin-bottom: 1.75rem; }
-  label { display: block; font-size: 0.85rem; font-weight: 600; margin: 1.25rem 0 0.35rem; }
+  label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; font-weight: 600; margin: 1.25rem 0 0.35rem; }
   label:first-of-type { margin-top: 0; }
+  .arrow-icon { flex-shrink: 0; }
   select, input[type=text], input[type=email], textarea {
     width: 100%;
     font-family: inherit;
@@ -76,21 +77,21 @@
   <div id="loading">Loading your projects...</div>
 
   <form id="portalForm" style="display:none;">
-    <label>Project / destination folder</label>
+    <label><svg class="arrow-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5 C4 15, 11 19, 18 19" stroke="#c7e600" stroke-width="3.5" stroke-linecap="round"/><path d="M13 15 L18 19 L13 23" stroke="#c7e600" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Project / destination folder</label>
     <select id="destSelect"></select>
 
-    <label>Subfolder name</label>
+    <label><svg class="arrow-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5 C4 15, 11 19, 18 19" stroke="#c7e600" stroke-width="3.5" stroke-linecap="round"/><path d="M13 15 L18 19 L13 23" stroke="#c7e600" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Subfolder name</label>
     <input type="text" id="newFolderName" placeholder="e.g. UPLOADS - Ana Torres - 07 Jul 2026">
     <div class="hint">Naming Convention: UPLOADS - [Client label] - [today's date]</div>
 
-    <label>Client / project label</label>
+    <label><svg class="arrow-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5 C4 15, 11 19, 18 19" stroke="#c7e600" stroke-width="3.5" stroke-linecap="round"/><path d="M13 15 L18 19 L13 23" stroke="#c7e600" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Client / project label</label>
     <input type="text" id="clientLabel" placeholder="e.g. Ana Torres - VPF - Visa">
     <div class="hint">Naming Convention: CLIENT - PROJECT - BUSINESS</div>
 
-    <label>Welcome message shown to the client</label>
-    <textarea id="welcomeMessage">Hi! Please upload your files here. Once you're done, our team will be notified automatically. Let us know if you have any questions.</textarea>
+    <label><svg class="arrow-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5 C4 15, 11 19, 18 19" stroke="#c7e600" stroke-width="3.5" stroke-linecap="round"/><path d="M13 15 L18 19 L13 23" stroke="#c7e600" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Welcome message shown to the client</label>
+    <textarea id="welcomeMessage">Hi! Please upload your files here. If you have any issues please contact us at Teamfilmsocial@freshemail.co.uk</textarea>
 
-    <label>Notify this email when someone uploads</label>
+    <label><svg class="arrow-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5 C4 15, 11 19, 18 19" stroke="#c7e600" stroke-width="3.5" stroke-linecap="round"/><path d="M13 15 L18 19 L13 23" stroke="#c7e600" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Notify this email when someone uploads</label>
     <input type="email" id="notifyEmail" placeholder="you@fresh.co.uk">
 
     <button type="submit" id="submitBtn">Create portal link</button>
