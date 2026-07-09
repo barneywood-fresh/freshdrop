@@ -79,12 +79,30 @@
   #dropzone.drag { border-color: var(--zing); background: #fdffe8; }
   #dropzone p { margin: 0; color: var(--muted); font-weight: 400; }
   input[type=file] { display: none; }
-  .file-row {
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.9rem 1rem;
+  .file-row { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; margin-top: 0.75rem; position: relative; }
+  .cancel-btn {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.7rem;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: none;
+    background: #eee;
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .cancel-btn:hover { background: #e2e2e6; color: var(--text); }
+  .no-refresh-note {
+    font-size: 0.78rem;
+    color: var(--muted);
     margin-top: 0.75rem;
+    display: none;
   }
   .file-row .name { font-size: 0.9rem; font-weight: 600; word-break: break-all; }
   .file-row .status { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
@@ -132,7 +150,7 @@
 </header>
 
 <main>
-  <p class="sub" id="subtitle">Drag files in, or click to browse. Files go straight into Frame.io - no account needed.</p>
+  <p class="sub" id="subtitle">Enter your name or email below to get started, then drag files in or click to browse. Files go straight into Frame.io - no account needed.</p>
   <div class="welcome-box" id="welcomeBox" style="display:none;"></div>
 
   <div id="gate" style="display:none;">
@@ -149,6 +167,7 @@
     </div>
 
     <div id="fileList"></div>
+    <p class="no-refresh-note" id="noRefreshNote">Please don't refresh this page or close this tab while uploads are in progress.</p>
 
     <div id="existing-section">
       <div class="section-title">
@@ -176,6 +195,39 @@ const fileList = document.getElementById('fileList');
 const existingList = document.getElementById('existingList');
 
 let uploaderName = '';
+let hasClientLabel = false;
+let activeUploads = 0;
+let wakeLock = null;
+
+async function acquireWakeLock() {
+  activeUploads++;
+  document.getElementById('noRefreshNote').style.display = 'block';
+  if (activeUploads === 1 && 'wakeLock' in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+    } catch (err) {
+      console.log('Wake lock not available:', err.message);
+    }
+  }
+}
+
+function releaseWakeLock() {
+  activeUploads = Math.max(0, activeUploads - 1);
+  if (activeUploads === 0) {
+    document.getElementById('noRefreshNote').style.display = 'none';
+    if (wakeLock) {
+      wakeLock.release().catch(() => {});
+      wakeLock = null;
+    }
+  }
+}
+
+window.addEventListener('beforeunload', (e) => {
+  if (activeUploads > 0) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 if (!portalId) {
   document.getElementById('missing-folder').style.display = 'block';
@@ -188,6 +240,10 @@ if (!portalId) {
     uploaderName = val;
     gateEl.style.display = 'none';
     uploadAreaEl.style.display = 'block';
+    if (!hasClientLabel) {
+      document.getElementById('subtitle').textContent =
+        'Drag files in, or click to browse. Files go straight into Frame.io - no account needed.';
+    }
     loadExistingFiles();
   });
 
@@ -210,6 +266,7 @@ async function loadPortalConfig() {
     const { welcome_message, client_label } = await res.json();
 
     if (client_label) {
+      hasClientLabel = true;
       document.getElementById('subtitle').textContent =
         `Upload for ${client_label}. Drag files in, or click to browse.`;
     }
@@ -255,9 +312,11 @@ async function loadExistingFiles() {
 }
 
 async function uploadFile(file) {
+  await acquireWakeLock();
   const row = document.createElement('div');
   row.className = 'file-row';
   row.innerHTML = `
+    <button class="cancel-btn" title="Cancel upload">&times;</button>
     <div class="name">${escapeHtml(file.name)}</div>
     <div class="status">Preparing upload...</div>
     <div class="bar-bg"><div class="bar-fill"></div></div>
@@ -265,6 +324,15 @@ async function uploadFile(file) {
   fileList.prepend(row);
   const statusEl = row.querySelector('.status');
   const barEl = row.querySelector('.bar-fill');
+  const cancelBtn = row.querySelector('.cancel-btn');
+
+  const controller = { cancelled: false, xhrs: [] };
+  cancelBtn.addEventListener('click', () => {
+    controller.cancelled = true;
+    controller.xhrs.forEach((x) => x.abort());
+    statusEl.textContent = 'Cancelled';
+    cancelBtn.style.display = 'none';
+  });
 
   try {
     const createRes = await fetch('/api/create-upload', {
@@ -290,6 +358,7 @@ async function uploadFile(file) {
     statusEl.textContent = 'Uploading...';
 
     const totalBytes = file.size;
+    const chunkCount = upload_urls.length;
     const loadedPerPart = new Array(upload_urls.length).fill(0);
     const startTime = performance.now();
     let offset = 0;
@@ -318,10 +387,10 @@ async function uploadFile(file) {
       offset = end;
       const chunk = file.slice(start, end);
 
-      return uploadPartXHR(part.url, chunk, media_type, (loadedBytes) => {
+      return uploadPartWithRetry(part.url, chunk, media_type, (loadedBytes) => {
         loadedPerPart[i] = loadedBytes;
         updateProgress();
-      });
+      }, i, chunkCount, statusEl, controller);
     });
 
     await Promise.all(chunkUploads);
@@ -329,6 +398,7 @@ async function uploadFile(file) {
     statusEl.textContent = 'Done';
     statusEl.classList.add('done');
     barEl.style.width = '100%';
+    cancelBtn.style.display = 'none';
 
     fetch('/api/log-upload', {
       method: 'POST',
@@ -340,15 +410,41 @@ async function uploadFile(file) {
         size: file.size
       })
     }).finally(loadExistingFiles);
+    releaseWakeLock();
   } catch (err) {
-    statusEl.textContent = 'Failed - ' + err.message;
-    statusEl.classList.add('error');
+    if (!controller.cancelled) {
+      statusEl.textContent = 'Failed - ' + err.message;
+      statusEl.classList.add('error');
+    }
+    cancelBtn.style.display = 'none';
+    releaseWakeLock();
   }
 }
 
-function uploadPartXHR(url, blob, mediaType, onProgress) {
+function uploadPartWithRetry(url, blob, mediaType, onProgress, partIndex, totalParts, statusEl, controller) {
+  const maxAttempts = 4;
+  let attempt = 0;
+
+  function tryOnce() {
+    if (controller.cancelled) return Promise.reject(new Error('Cancelled'));
+    attempt++;
+    return uploadPartXHR(url, blob, mediaType, onProgress, controller).catch((err) => {
+      if (controller.cancelled || attempt >= maxAttempts) throw err;
+      if (statusEl) {
+        statusEl.textContent = `Connection interrupted, retrying part ${partIndex + 1}/${totalParts} (attempt ${attempt + 1})...`;
+      }
+      const delayMs = 1500 * attempt;
+      return new Promise((resolve) => setTimeout(resolve, delayMs)).then(tryOnce);
+    });
+  }
+
+  return tryOnce();
+}
+
+function uploadPartXHR(url, blob, mediaType, onProgress, controller) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    if (controller) controller.xhrs.push(xhr);
     xhr.open('PUT', url);
     xhr.setRequestHeader('Content-Type', mediaType);
     xhr.setRequestHeader('x-amz-acl', 'private');
@@ -367,6 +463,7 @@ function uploadPartXHR(url, blob, mediaType, onProgress) {
     });
 
     xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+    xhr.addEventListener('abort', () => reject(new Error('Cancelled')));
     xhr.send(blob);
   });
 }
