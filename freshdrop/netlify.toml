@@ -1,7 +1,10 @@
 [build]
   functions = "netlify/functions"
   publish = "public"
-
+  
+[functions."keep-alive"]
+  schedule = "0 6 */3 * *"
+  
 [[redirects]]
   from = "/connect"
   to = "/.netlify/functions/oauth-start"
